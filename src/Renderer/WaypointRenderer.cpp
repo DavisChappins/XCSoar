@@ -16,12 +16,20 @@
 #include "Engine/GlideSolvers/MacCready.hpp"
 #include "Engine/Task/TaskManager.hpp"
 #include "Engine/Task/AbstractTask.hpp"
+#include "Engine/Task/Points/TaskPoint.hpp"
 #include "Engine/Task/Unordered/UnorderedTaskPoint.hpp"
 #include "Engine/Task/Ordered/Points/OrderedTaskPoint.hpp"
+#include "Engine/Task/Unordered/GotoTask.hpp"
+#include "time/BrokenTime.hpp"
+#include "time/RoughTime.hpp"
+#include "time/LocalTime.hpp"
 #include "Task/ProtectedTaskManager.hpp"
 #include "Task/ProtectedRoutePlanner.hpp"
 #include "ui/canvas/Canvas.hpp"
+#include "ui/canvas/Pen.hpp"
+#include "ui/canvas/Color.hpp" // Use generic Color header
 #include "Units/Units.hpp"
+#include "Geo/GeoPoint.hpp"
 #include "util/TruncateString.hpp"
 #include "util/StaticArray.hxx"
 #include "util/Macros.hpp"
@@ -29,6 +37,7 @@
 #include "NMEA/Derived.hpp"
 #include "Engine/Route/ReachResult.hpp"
 #include "Look/WaypointLook.hpp"
+#include "Profile/Profile.hpp"
 
 #include <cassert>
 #include <stdio.h>
@@ -150,6 +159,7 @@ class WaypointVisitorMap final
 
 public:
   WaypointLabelList labels;
+  WaypointPtr last_task_waypoint = nullptr; // <-- Add: Store last visited task waypoint
 
 public:
   WaypointVisitorMap(Canvas &_canvas,
@@ -379,17 +389,24 @@ public:
   }
 
   void Visit(const TaskPoint &tp) override {
+    WaypointPtr current_wp = nullptr;
     switch (tp.GetType()) {
     case TaskPointType::UNORDERED:
-      AddWaypoint(((const UnorderedTaskPoint &)tp).GetWaypointPtr(), true);
+      current_wp = static_cast<const UnorderedTaskPoint &>(tp).GetWaypointPtr();
+      AddWaypoint(current_wp, true);
       break;
 
     case TaskPointType::START:
     case TaskPointType::AST:
     case TaskPointType::AAT:
     case TaskPointType::FINISH:
-      AddWaypoint(((const OrderedTaskPoint &)tp).GetWaypointPtr(), true);
+      current_wp = static_cast<const OrderedTaskPoint &>(tp).GetWaypointPtr();
+      AddWaypoint(current_wp, true);
       break;
+    }
+    // Update the last visited task waypoint
+    if (current_wp) {
+        last_task_waypoint = current_wp;
     }
   }
 
@@ -467,36 +484,248 @@ WaypointRenderer::Render(Canvas &canvas, LabelBlock &label_block,
                          const TaskBehaviour &task_behaviour,
                          const MoreData &basic, const DerivedInfo &calculated,
                          const ProtectedTaskManager *task,
-                         const ProtectedRoutePlanner *route_planner) noexcept
+                         const ProtectedRoutePlanner *route_planner,
+                         const ComputerSettings &computer_settings) noexcept
 {
   if (way_points == nullptr || way_points->IsEmpty())
     return;
 
   WaypointVisitorMap v(canvas, projection, settings, look, task_behaviour, basic);
 
+  GeoPoint ring_center; // Variable to store ring center
+  bool draw_ring = false; // Flag to indicate if ring should be drawn
+
+  // Removed duplicate declarations below
+  WaypointPtr goto_wp = nullptr; // Store GOTO waypoint if applicable
+
   if (task != nullptr) {
     ProtectedTaskManager::Lease task_manager(*task);
 
     const TaskStats &task_stats = task_manager->GetStats();
 
-    // task items come first, this is the only way we know that an item is in task,
-    // and we won't add it if it is already there
     if (task_stats.task_valid)
       v.SetTaskValid();
 
     const AbstractTask *atask = task_manager->GetActiveTask();
-    if (atask != nullptr)
+    if (atask != nullptr) {
+      // Check if it's a GOTO task first
+      if (atask->GetType() == TaskType::GOTO) {
+          const GotoTask* goto_task = static_cast<const GotoTask*>(atask);
+          // Get the active (and only) point in a GotoTask
+          const TaskWaypoint* goto_task_point = goto_task->GetActiveTaskPoint();
+          if (goto_task_point != nullptr) {
+              // GetActiveTaskPoint in GotoTask returns the internal UnorderedTaskPoint*
+              const UnorderedTaskPoint* utp = static_cast<const UnorderedTaskPoint*>(goto_task_point);
+              goto_wp = utp->GetWaypointPtr();
+              // Add other TaskWaypoint derived types if necessary
+          }
+      }
+
+      // Visit all task points (needed for drawing them anyway,
+      // and populates v.last_task_waypoint for non-GOTO tasks)
       atask->AcceptTaskPointVisitor(v);
+
+      // Determine ring center
+      if (goto_wp) {
+          // GOTO task takes precedence
+          ring_center = goto_wp->location;
+          draw_ring = true;
+      } else if (v.last_task_waypoint) {
+          // Fallback to last waypoint of the current task
+          ring_center = v.last_task_waypoint->location;
+          draw_ring = true;
+      }
+    }
   }
 
+  // Add non-task waypoints from the database
   way_points->VisitWithinRange(projection.GetGeoScreenCenter(),
                                projection.GetScreenDistanceMeters(),
                                [&v](const auto &w){ v.Add(w); });
 
+  // Calculate reachability etc. for all collected waypoints
   v.Calculate(route_planner, polar_settings, task_behaviour, calculated);
 
+  // Draw waypoint icons and symbols
   v.Draw();
 
+  // Draw the arrival time ring if a center was determined
+  if (draw_ring) {
+      // Always convert to screen coordinates regardless of visibility
+      auto center_px = projection.GeoToScreen(ring_center);
+      {
+          // Get the speed from the FIN ETE calculation
+          const TaskStats &task_stats = calculated.task_stats;
+          double fin_ete_speed = 0;
+          
+          // Check if task stats are valid and speed is defined
+          if (task_stats.task_valid && task_stats.total.remaining_effective.IsDefined()) {
+              // This is the same speed used for the FIN ETE infobox
+              // GetSpeed() returns m/s, convert to km/h for our calculation
+              fin_ete_speed = task_stats.total.remaining_effective.GetSpeed() * 3.6; // m/s to km/h
+          }
+          
+          // If speed is not available or zero, use a default value to avoid division by zero
+          if (fin_ete_speed <= 0) {
+              fin_ete_speed = 100; // Default 100 km/h if no valid speed
+          }
+          
+          // Use the basic parameter passed to the Render method
+          // instead of accessing CommonInterface directly
+          
+          // Calculate radius based on time to arrival
+          double radius_meters = 0;
+          
+          // Get the arrival time ring time from the profile
+          unsigned minutes_of_day = 17 * 60 + 0; // Default to 5:00 PM (1700)
+          Profile::Get(ProfileKeys::ArrivalTimeRingTime, minutes_of_day);
+          
+          if (basic.time_available) {
+              // Convert current time to local time
+              // Use the UTC offset from the passed ComputerSettings
+              RoughTimeDelta utc_offset = computer_settings.utc_offset;
+              TimeStamp local_time = TimeLocal(basic.time, utc_offset);
+              
+              BrokenTime target_time(minutes_of_day / 60, minutes_of_day % 60, 0);
+              
+              // Convert current time to hours for calculation
+              BrokenTime current_broken_time = BrokenTime::FromSecondOfDayChecked(
+                  (unsigned)local_time.ToDuration().count());
+              
+              // Calculate time difference in hours
+              double hours_to_target = 0;
+              
+              // Calculate seconds from midnight for both times
+              int current_seconds = current_broken_time.GetSecondOfDay();
+              int target_seconds = target_time.GetSecondOfDay();
+              
+              // Calculate time difference in seconds
+              int seconds_diff = target_seconds - current_seconds;
+              
+              // If target time is earlier today (already passed 11am), assume it's for tomorrow
+              if (seconds_diff < 0) {
+                  seconds_diff += 24 * 3600; // Add 24 hours
+              }
+              
+              // Convert to hours
+              hours_to_target = seconds_diff / 3600.0;
+              
+              // Calculate distance that can be traveled in the remaining time at the FIN ETE speed
+              // This uses the cross-country speed (climbing AND gliding) from the FIN ETE calculation
+              radius_meters = fin_ete_speed * hours_to_target * 1000; // km/h * h * 1000 = m
+          } else {
+              // Fallback to a default radius if time is not available
+              constexpr double radius_miles = 10.0;
+              constexpr double meters_per_mile = 1609.34;
+              radius_meters = radius_miles * meters_per_mile;
+          }
+          
+          // Convert radius to pixels using the correct method
+          const double radius_pixels_d = projection.DistanceMetersToPixels(radius_meters);
+          
+          // Define color and line width - using a bright magenta color that should be visible on most backgrounds
+          constexpr Color ring_color = Color(255, 0, 255); // RGB for Magenta (bright pink/purple)
+          constexpr unsigned line_width = 4;           // Increased line width to 4 pixels for better visibility
+          
+          // Draw the circle
+          if (radius_pixels_d >= 1.0) { // Only draw if radius is at least 1 pixel
+             const unsigned radius_pixels = static_cast<unsigned>(radius_pixels_d);
+             
+             // Select the pen and brush for the ring
+             // Force the line style to be SOLID to ensure consistent appearance across platforms
+             canvas.Select(Pen(line_width, ring_color));
+             canvas.SelectHollowBrush();
+             
+             // Draw the circle
+             canvas.DrawCircle(center_px, radius_pixels);
+             
+             // Format the arrival time label
+             TCHAR time_text[32];
+             _stprintf(time_text, _T("Arrival %02u:%02u"),
+                       minutes_of_day / 60, minutes_of_day % 60);
+             
+             // Set up the text box mode
+             TextInBoxMode text_mode;
+             text_mode.shape = LabelShape::OUTLINED;  // Use outlined style as requested
+             text_mode.move_in_view = true;           // Move the label in view if needed
+             
+             // Calculate 8 possible positions around the circle (at 45-degree intervals)
+             const int label_offset = radius_pixels + 5;  // 5 pixels from the circle edge
+             
+             // Get the aircraft position in screen coordinates
+             PixelPoint aircraft_pos = projection.GeoToScreen(basic.location);
+             
+             // Define the 8 possible positions
+             PixelPoint positions[8];
+             TextInBoxMode::Alignment alignments[8];
+             TextInBoxMode::VerticalPosition vert_positions[8];
+             
+             // North (top)
+             positions[0] = { center_px.x, center_px.y - label_offset };
+             alignments[0] = TextInBoxMode::Alignment::CENTER;
+             vert_positions[0] = TextInBoxMode::VerticalPosition::ABOVE;
+             
+             // Northeast
+             positions[1] = { center_px.x + (int)(label_offset * 0.7), center_px.y - (int)(label_offset * 0.7) };
+             alignments[1] = TextInBoxMode::Alignment::LEFT;
+             vert_positions[1] = TextInBoxMode::VerticalPosition::ABOVE;
+             
+             // East (right)
+             positions[2] = { center_px.x + label_offset, center_px.y };
+             alignments[2] = TextInBoxMode::Alignment::LEFT;
+             vert_positions[2] = TextInBoxMode::VerticalPosition::CENTERED;
+             
+             // Southeast
+             positions[3] = { center_px.x + (int)(label_offset * 0.7), center_px.y + (int)(label_offset * 0.7) };
+             alignments[3] = TextInBoxMode::Alignment::LEFT;
+             vert_positions[3] = TextInBoxMode::VerticalPosition::BELOW;
+             
+             // South (bottom)
+             positions[4] = { center_px.x, center_px.y + label_offset };
+             alignments[4] = TextInBoxMode::Alignment::CENTER;
+             vert_positions[4] = TextInBoxMode::VerticalPosition::BELOW;
+             
+             // Southwest
+             positions[5] = { center_px.x - (int)(label_offset * 0.7), center_px.y + (int)(label_offset * 0.7) };
+             alignments[5] = TextInBoxMode::Alignment::RIGHT;
+             vert_positions[5] = TextInBoxMode::VerticalPosition::BELOW;
+             
+             // West (left)
+             positions[6] = { center_px.x - label_offset, center_px.y };
+             alignments[6] = TextInBoxMode::Alignment::RIGHT;
+             vert_positions[6] = TextInBoxMode::VerticalPosition::CENTERED;
+             
+             // Northwest
+             positions[7] = { center_px.x - (int)(label_offset * 0.7), center_px.y - (int)(label_offset * 0.7) };
+             alignments[7] = TextInBoxMode::Alignment::RIGHT;
+             vert_positions[7] = TextInBoxMode::VerticalPosition::ABOVE;
+             
+             // Find the position closest to the aircraft
+             int closest_idx = 0;
+             int min_distance_squared = INT_MAX;
+             
+             for (int i = 0; i < 8; i++) {
+                 int dx = positions[i].x - aircraft_pos.x;
+                 int dy = positions[i].y - aircraft_pos.y;
+                 int distance_squared = dx * dx + dy * dy;
+                 
+                 if (distance_squared < min_distance_squared) {
+                     min_distance_squared = distance_squared;
+                     closest_idx = i;
+                 }
+             }
+             
+             // Set the alignment and vertical position for the closest position
+             text_mode.align = alignments[closest_idx];
+             text_mode.vertical_position = vert_positions[closest_idx];
+             
+             // Draw the label at the closest position
+             TextInBox(canvas, time_text, positions[closest_idx], text_mode, projection.GetScreenSize());
+          }
+      }
+  }
+
+  // Draw waypoint labels
   MapWaypointLabelRender(canvas, projection.GetScreenSize(),
                          label_block, v.labels, look);
 }

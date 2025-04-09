@@ -217,6 +217,7 @@ constexpr std::string_view FontAirspacePressFont = "AirspacePressFont";
 constexpr std::string_view FontAirspaceColourDlgFont = "AirspaceColourDlgFont";
 constexpr std::string_view FontTeamCodeFont = "TeamCodeFont";
 constexpr std::string_view Show95PercentRuleHelpers = "Show95PercentRuleHelpers";
+constexpr std::string_view ArrivalTimeRingTime = "ArrivalTimeRingTime";
 
 constexpr std::string_view UseFinalGlideDisplayMode = "UseFinalGlideDisplayMode";
 constexpr std::string_view InfoBoxGeometry = "InfoBoxGeometry";
