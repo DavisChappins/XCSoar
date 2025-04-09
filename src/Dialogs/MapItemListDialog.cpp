@@ -23,7 +23,7 @@
 #include "UIGlobals.hpp"
 #include "Components.hpp"
 #include "BackendComponents.hpp"
-#include "MainWindow.hpp" // <-- Include MainWindow.hpp
+#include "MainWindow.hpp"
 
 #ifdef HAVE_NOAA
 #include "Dialogs/Weather/NOAADetails.hpp"
@@ -219,7 +219,7 @@ MapItemListWidget::OnGotoClicked()
   auto waypoint = ((const WaypointMapItem &)item).waypoint;
   backend_components->protected_task_manager->DoGoto(std::move(waypoint));
   cancel_button->Click();
-  CommonInterface::main_window->FullRedraw(); // <-- Trigger redraw
+  CommonInterface::main_window->FullRedraw();
 }
 
 inline void

@@ -215,9 +215,8 @@ struct ThermalMapItem: public MapItem
     :MapItem(Type::THERMAL), thermal(_thermal) {}
 };
 
-/**
- * A ring drawn around a specific waypoint representing arrival time.
- */
+
+// A ring drawn around a specific waypoint representing arrival time.
 struct ArrivalTimeRingMapItem: public MapItem
 {
   GeoPoint center;

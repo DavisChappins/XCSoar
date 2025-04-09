@@ -43,7 +43,7 @@ TimeEntryDialog(const TCHAR *caption, RoughTime &value,
 
   dialog.AddButton(_("OK"), mrOK);
   dialog.AddButton(_("Cancel"), mrCancel);
-  // Removed the "Now" button as requested
+
 
   if (nullable)
     dialog.AddButton(_("Clear"), [&entry=*entry](){

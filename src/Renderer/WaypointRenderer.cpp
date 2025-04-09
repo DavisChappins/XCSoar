@@ -27,7 +27,7 @@
 #include "Task/ProtectedRoutePlanner.hpp"
 #include "ui/canvas/Canvas.hpp"
 #include "ui/canvas/Pen.hpp"
-#include "ui/canvas/Color.hpp" // Use generic Color header
+#include "ui/canvas/Color.hpp"
 #include "Units/Units.hpp"
 #include "Geo/GeoPoint.hpp"
 #include "util/TruncateString.hpp"
@@ -159,7 +159,7 @@ class WaypointVisitorMap final
 
 public:
   WaypointLabelList labels;
-  WaypointPtr last_task_waypoint = nullptr; // <-- Add: Store last visited task waypoint
+  WaypointPtr last_task_waypoint = nullptr;
 
 public:
   WaypointVisitorMap(Canvas &_canvas,
@@ -495,7 +495,7 @@ WaypointRenderer::Render(Canvas &canvas, LabelBlock &label_block,
   GeoPoint ring_center; // Variable to store ring center
   bool draw_ring = false; // Flag to indicate if ring should be drawn
 
-  // Removed duplicate declarations below
+
   WaypointPtr goto_wp = nullptr; // Store GOTO waypoint if applicable
 
   if (task != nullptr) {
@@ -538,12 +538,12 @@ WaypointRenderer::Render(Canvas &canvas, LabelBlock &label_block,
     }
   }
 
-  // Add non-task waypoints from the database
+
   way_points->VisitWithinRange(projection.GetGeoScreenCenter(),
                                projection.GetScreenDistanceMeters(),
                                [&v](const auto &w){ v.Add(w); });
 
-  // Calculate reachability etc. for all collected waypoints
+
   v.Calculate(route_planner, polar_settings, task_behaviour, calculated);
 
   // Draw waypoint icons and symbols
