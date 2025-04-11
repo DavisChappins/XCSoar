@@ -8,5 +8,5 @@ class ProfileMap;
 
 namespace Profile {
   void Load(const ProfileMap &map, RoutePlannerConfig &settings);
-  void Save(ProfileMap &map, const RoutePlannerConfig &settings); // Add Save declaration
+  void Save(ProfileMap &map, const RoutePlannerConfig &settings);
 };

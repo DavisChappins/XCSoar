@@ -168,7 +168,7 @@ constexpr std::string_view FinishRadius = "FinishRadius";
 constexpr std::string_view TaskType = "TaskType";
 constexpr std::string_view AATMinTime = "AATMinTime";
 constexpr std::string_view AATTimeMargin = "AATTimeMargin";
-constexpr std::string_view ArrivalRingAATEnabled = "ArrivalRingAATEnabled"; // Add new key here
+constexpr std::string_view ArrivalRingAATEnabled = "ArrivalRingAATEnabled";
 constexpr std::string_view PEVStartWaitTime = "PEVStartWaitTime";
 constexpr std::string_view PEVStartWindow = "PEVStartWindow";
 
