@@ -725,8 +725,8 @@ WaypointRenderer::Render(Canvas &canvas, LabelBlock &label_block,
       }
     }
 
-    // --- Draw New "Arrival Ring AAT" (AAT time remaining) ---
-    {
+    // --- Draw New "Arrival Ring AAT" (AAT time remaining, if enabled) ---
+    if (task_behaviour.arrival_ring_aat_enabled) { // Check if the setting is enabled
       const CommonStats &common_stats = calculated.common_stats;
       // Check if AAT time remaining is valid and we have an ordered task
       // (AAT time only makes sense for ordered tasks like AAT)
@@ -759,7 +759,7 @@ WaypointRenderer::Render(Canvas &canvas, LabelBlock &label_block,
     }
   }
 
-  // Draw waypoint labels
+  // Draw waypoint labels 
   MapWaypointLabelRender(canvas, projection.GetScreenSize(),
                          label_block, v.labels, look);
 }
