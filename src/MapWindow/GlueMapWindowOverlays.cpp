@@ -472,6 +472,7 @@ GlueMapWindow::DrawTurnBackPoint(Canvas &canvas,
   if (Calculated().circling)
     return;
 
-  turn_back_point_renderer.Draw(canvas, render_projection,
-                               aircraft_pos, Basic(), Calculated());
+ turn_back_point_renderer.Draw(canvas, render_projection,
+                              aircraft_pos, Basic(), Calculated(),
+                              GetComputerSettings()); // Pass ComputerSettings
 }

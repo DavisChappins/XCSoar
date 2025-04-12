@@ -11,6 +11,7 @@ struct MapLook;
 struct NMEAInfo;
 struct DerivedInfo;
 struct MapSettings;
+struct ComputerSettings;
 
 /**
  * Renderer for the Turn Back Point (TBP)
@@ -30,10 +31,12 @@ public:
    * @param pos The aircraft position on screen
    * @param basic Basic NMEA info
    * @param calculated Calculated info including task stats
+   * @param settings Computer settings
    */
   void Draw(Canvas &canvas,
             const WindowProjection &projection,
             const PixelPoint pos,
             const NMEAInfo &basic,
-            const DerivedInfo &calculated) const noexcept;
+            const DerivedInfo &calculated,
+            const ComputerSettings &settings) const noexcept;
 };
