@@ -8,6 +8,7 @@
 #include "Geo/Math.hpp"
 #include "Screen/Layout.hpp"
 #include "Math/Screen.hpp"
+#include "Computer/Settings.hpp" // Added for ComputerSettings
 #include <cmath>
 #include <limits>
 
@@ -19,8 +20,13 @@ TurnBackPointRenderer::Draw(Canvas &canvas,
                             const WindowProjection &projection,
                             [[maybe_unused]] const PixelPoint pos,
                             const NMEAInfo &basic,
-                            const DerivedInfo &calculated) const noexcept
+                            const DerivedInfo &calculated,
+                            const ComputerSettings &settings) const noexcept
 {
+  // Check if the feature is enabled in settings
+  if (!settings.task.turn_back_marker_enabled)
+    return;
+
   // Check if we have a valid task and solution data structure
   const TaskStats &task_stats = calculated.task_stats;
   if (!task_stats.task_valid)
