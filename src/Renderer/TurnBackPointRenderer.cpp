@@ -8,7 +8,7 @@
 #include "Geo/Math.hpp"
 #include "Screen/Layout.hpp"
 #include "Math/Screen.hpp"
-#include "Computer/Settings.hpp" // Added for ComputerSettings
+#include "Computer/Settings.hpp"
 #include <cmath>
 #include <limits>
 
@@ -128,9 +128,9 @@ TurnBackPointRenderer::Draw(Canvas &canvas,
 
   // --- Draw the TBP Symbol ---
   BulkPixelPoint triangle[3];
-  triangle[0].x = 0;  triangle[0].y = -5;
-  triangle[1].x = -4; triangle[1].y = 3;
-  triangle[2].x = 4;  triangle[2].y = 3;
+  triangle[0].x = 0;                      triangle[0].y = -Layout::Scale(5);
+  triangle[1].x = -Layout::Scale(4);      triangle[1].y = Layout::Scale(3);
+  triangle[2].x = Layout::Scale(4);       triangle[2].y = Layout::Scale(3);
 
   PolygonRotateShift(std::span<BulkPixelPoint>(triangle, 3), *tbp_screen,
                      basic.track - projection.GetScreenAngle());
