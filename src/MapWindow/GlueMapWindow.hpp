@@ -252,7 +252,7 @@ private:
   void DrawThermalBand(Canvas &canvas, const PixelRect &rc) const noexcept;
   void DrawFinalGlide(Canvas &canvas, const PixelRect &rc) const noexcept;
   void DrawVario(Canvas &canvas, const PixelRect &rc) const noexcept;
-  void DrawTurnBackPoint(Canvas &canvas, const PixelPoint aircraft_pos) const noexcept;
+  void DrawTurnBackPoint(Canvas &canvas, const PixelPoint aircraft_pos) const noexcept override;
   void DrawStallRatio(Canvas &canvas, const PixelRect &rc) const noexcept;
 
   void SwitchZoomClimb() noexcept;
