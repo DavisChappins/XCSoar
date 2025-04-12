@@ -40,6 +40,7 @@
 #include "Profile/Profile.hpp"
 
 #include <cassert>
+#include <cmath> // Needed for std::isfinite
 #include <stdio.h>
 
 /**
@@ -476,6 +477,111 @@ MapWaypointLabelRender(Canvas &canvas, PixelSize clip_size,
   }
 }
 
+// Helper function to draw a time ring on the map
+static void DrawMapRing(Canvas &canvas,
+                        const MapWindowProjection &projection,
+                        const PixelPoint &center_px,
+                        double radius_meters,
+                        const Color &ring_color,
+                        const TCHAR *label_text,
+                        const PixelPoint &aircraft_pos) noexcept
+{
+  // Convert radius to pixels using the correct method
+  const double radius_pixels_d = projection.DistanceMetersToPixels(radius_meters);
+
+  // Define line width
+  constexpr unsigned line_width = 4; // Increased line width for better visibility
+
+  // Draw the circle
+  if (radius_pixels_d >= 1.0) { // Only draw if radius is at least 1 pixel
+    const unsigned radius_pixels = static_cast<unsigned>(radius_pixels_d);
+
+    // Select the pen and brush for the ring
+    // Force the line style to be SOLID to ensure consistent appearance across platforms
+    canvas.Select(Pen(line_width, ring_color));
+    canvas.SelectHollowBrush();
+
+    // Draw the circle
+    canvas.DrawCircle(center_px, radius_pixels);
+
+    // Set up the text box mode for the label
+    TextInBoxMode text_mode;
+    text_mode.shape = LabelShape::OUTLINED;  // Use outlined style
+    text_mode.move_in_view = true;           // Move the label in view if needed
+
+    // Calculate 8 possible positions around the circle (at 45-degree intervals)
+    const int label_offset = radius_pixels + 5;  // 5 pixels from the circle edge
+
+    // Define the 8 possible positions
+    PixelPoint positions[8];
+    TextInBoxMode::Alignment alignments[8];
+    TextInBoxMode::VerticalPosition vert_positions[8];
+
+    // North (top)
+    positions[0] = { center_px.x, center_px.y - label_offset };
+    alignments[0] = TextInBoxMode::Alignment::CENTER;
+    vert_positions[0] = TextInBoxMode::VerticalPosition::ABOVE;
+
+    // Northeast
+    positions[1] = { center_px.x + (int)(label_offset * 0.7071), center_px.y - (int)(label_offset * 0.7071) }; // Use 0.7071 for sqrt(2)/2
+    alignments[1] = TextInBoxMode::Alignment::LEFT;
+    vert_positions[1] = TextInBoxMode::VerticalPosition::ABOVE;
+
+    // East (right)
+    positions[2] = { center_px.x + label_offset, center_px.y };
+    alignments[2] = TextInBoxMode::Alignment::LEFT;
+    vert_positions[2] = TextInBoxMode::VerticalPosition::CENTERED;
+
+    // Southeast
+    positions[3] = { center_px.x + (int)(label_offset * 0.7071), center_px.y + (int)(label_offset * 0.7071) };
+    alignments[3] = TextInBoxMode::Alignment::LEFT;
+    vert_positions[3] = TextInBoxMode::VerticalPosition::BELOW;
+
+    // South (bottom)
+    positions[4] = { center_px.x, center_px.y + label_offset };
+    alignments[4] = TextInBoxMode::Alignment::CENTER;
+    vert_positions[4] = TextInBoxMode::VerticalPosition::BELOW;
+
+    // Southwest
+    positions[5] = { center_px.x - (int)(label_offset * 0.7071), center_px.y + (int)(label_offset * 0.7071) };
+    alignments[5] = TextInBoxMode::Alignment::RIGHT;
+    vert_positions[5] = TextInBoxMode::VerticalPosition::BELOW;
+
+    // West (left)
+    positions[6] = { center_px.x - label_offset, center_px.y };
+    alignments[6] = TextInBoxMode::Alignment::RIGHT;
+    vert_positions[6] = TextInBoxMode::VerticalPosition::CENTERED;
+
+    // Northwest
+    positions[7] = { center_px.x - (int)(label_offset * 0.7071), center_px.y - (int)(label_offset * 0.7071) };
+    alignments[7] = TextInBoxMode::Alignment::RIGHT;
+    vert_positions[7] = TextInBoxMode::VerticalPosition::ABOVE;
+
+    // Find the position closest to the aircraft
+    int closest_idx = 0;
+    int min_distance_squared = INT_MAX;
+
+    for (int i = 0; i < 8; i++) {
+      int dx = positions[i].x - aircraft_pos.x;
+      int dy = positions[i].y - aircraft_pos.y;
+      int distance_squared = dx * dx + dy * dy;
+
+      if (distance_squared < min_distance_squared) {
+        min_distance_squared = distance_squared;
+        closest_idx = i;
+      }
+    }
+
+    // Set the alignment and vertical position for the closest position
+    text_mode.align = alignments[closest_idx];
+    text_mode.vertical_position = vert_positions[closest_idx];
+
+    // Draw the label at the closest position
+    TextInBox(canvas, label_text, positions[closest_idx], text_mode, projection.GetScreenSize());
+  }
+}
+
+
 void
 WaypointRenderer::Render(Canvas &canvas, LabelBlock &label_block,
                          const MapWindowProjection &projection,
@@ -549,183 +655,111 @@ WaypointRenderer::Render(Canvas &canvas, LabelBlock &label_block,
   // Draw waypoint icons and symbols
   v.Draw();
 
-  // Draw the arrival time ring if a center was determined
+  // Draw time rings if a center was determined
   if (draw_ring) {
-      // Always convert to screen coordinates regardless of visibility
-      auto center_px = projection.GeoToScreen(ring_center);
-      {
-          // Get the speed from the FIN ETE calculation
-          const TaskStats &task_stats = calculated.task_stats;
-          double fin_ete_speed = 0;
-          
-          // Check if task stats are valid and speed is defined
-          if (task_stats.task_valid && task_stats.total.remaining_effective.IsDefined()) {
-              // This is the same speed used for the FIN ETE infobox
-              // GetSpeed() returns m/s, convert to km/h for our calculation
-              fin_ete_speed = task_stats.total.remaining_effective.GetSpeed() * 3.6; // m/s to km/h
-          }
-          
-          // If speed is not available or zero, use a default value to avoid division by zero
-          if (fin_ete_speed <= 0) {
-              fin_ete_speed = 100; // Default 100 km/h if no valid speed
-          }
-          
-          // Use the basic parameter passed to the Render method
-          // instead of accessing CommonInterface directly
-          
-          // Calculate radius based on time to arrival
-          double radius_meters = 0;
-          
-          // Get the arrival time ring time from the profile
-          unsigned minutes_of_day = 17 * 60 + 0; // Default to 5:00 PM (1700)
-          Profile::Get(ProfileKeys::ArrivalTimeRingTime, minutes_of_day);
-          
-          if (basic.time_available) {
-              // Convert current time to local time
-              // Use the UTC offset from the passed ComputerSettings
-              RoughTimeDelta utc_offset = computer_settings.utc_offset;
-              TimeStamp local_time = TimeLocal(basic.time, utc_offset);
-              
-              BrokenTime target_time(minutes_of_day / 60, minutes_of_day % 60, 0);
-              
-              // Convert current time to hours for calculation
-              BrokenTime current_broken_time = BrokenTime::FromSecondOfDayChecked(
-                  (unsigned)local_time.ToDuration().count());
-              
-              // Calculate time difference in hours
-              double hours_to_target = 0;
-              
-              // Calculate seconds from midnight for both times
-              int current_seconds = current_broken_time.GetSecondOfDay();
-              int target_seconds = target_time.GetSecondOfDay();
-              
-              // Calculate time difference in seconds
-              int seconds_diff = target_seconds - current_seconds;
-              
-              // If target time is earlier today (already passed 11am), assume it's for tomorrow
-              if (seconds_diff < 0) {
-                  seconds_diff += 24 * 3600; // Add 24 hours
-              }
-              
-              // Convert to hours
-              hours_to_target = seconds_diff / 3600.0;
-              
-              // Calculate distance that can be traveled in the remaining time at the FIN ETE speed
-              // This uses the cross-country speed (climbing AND gliding) from the FIN ETE calculation
-              radius_meters = fin_ete_speed * hours_to_target * 1000; // km/h * h * 1000 = m
-          } else {
-              // Fallback to a default radius if time is not available
-              constexpr double radius_miles = 10.0;
-              constexpr double meters_per_mile = 1609.34;
-              radius_meters = radius_miles * meters_per_mile;
-          }
-          
-          // Convert radius to pixels using the correct method
-          const double radius_pixels_d = projection.DistanceMetersToPixels(radius_meters);
-          
-          // Define color and line width - using a bright magenta color that should be visible on most backgrounds
-          constexpr Color ring_color = Color(255, 0, 255); // RGB for Magenta (bright pink/purple)
-          constexpr unsigned line_width = 4;           // Increased line width to 4 pixels for better visibility
-          
-          // Draw the circle
-          if (radius_pixels_d >= 1.0) { // Only draw if radius is at least 1 pixel
-             const unsigned radius_pixels = static_cast<unsigned>(radius_pixels_d);
-             
-             // Select the pen and brush for the ring
-             // Force the line style to be SOLID to ensure consistent appearance across platforms
-             canvas.Select(Pen(line_width, ring_color));
-             canvas.SelectHollowBrush();
-             
-             // Draw the circle
-             canvas.DrawCircle(center_px, radius_pixels);
-             
-             // Format the arrival time label
-             TCHAR time_text[32];
-             _stprintf(time_text, _T("Arrival %02u:%02u"),
-                       minutes_of_day / 60, minutes_of_day % 60);
-             
-             // Set up the text box mode
-             TextInBoxMode text_mode;
-             text_mode.shape = LabelShape::OUTLINED;  // Use outlined style as requested
-             text_mode.move_in_view = true;           // Move the label in view if needed
-             
-             // Calculate 8 possible positions around the circle (at 45-degree intervals)
-             const int label_offset = radius_pixels + 5;  // 5 pixels from the circle edge
-             
-             // Get the aircraft position in screen coordinates
-             PixelPoint aircraft_pos = projection.GeoToScreen(basic.location);
-             
-             // Define the 8 possible positions
-             PixelPoint positions[8];
-             TextInBoxMode::Alignment alignments[8];
-             TextInBoxMode::VerticalPosition vert_positions[8];
-             
-             // North (top)
-             positions[0] = { center_px.x, center_px.y - label_offset };
-             alignments[0] = TextInBoxMode::Alignment::CENTER;
-             vert_positions[0] = TextInBoxMode::VerticalPosition::ABOVE;
-             
-             // Northeast
-             positions[1] = { center_px.x + (int)(label_offset * 0.7), center_px.y - (int)(label_offset * 0.7) };
-             alignments[1] = TextInBoxMode::Alignment::LEFT;
-             vert_positions[1] = TextInBoxMode::VerticalPosition::ABOVE;
-             
-             // East (right)
-             positions[2] = { center_px.x + label_offset, center_px.y };
-             alignments[2] = TextInBoxMode::Alignment::LEFT;
-             vert_positions[2] = TextInBoxMode::VerticalPosition::CENTERED;
-             
-             // Southeast
-             positions[3] = { center_px.x + (int)(label_offset * 0.7), center_px.y + (int)(label_offset * 0.7) };
-             alignments[3] = TextInBoxMode::Alignment::LEFT;
-             vert_positions[3] = TextInBoxMode::VerticalPosition::BELOW;
-             
-             // South (bottom)
-             positions[4] = { center_px.x, center_px.y + label_offset };
-             alignments[4] = TextInBoxMode::Alignment::CENTER;
-             vert_positions[4] = TextInBoxMode::VerticalPosition::BELOW;
-             
-             // Southwest
-             positions[5] = { center_px.x - (int)(label_offset * 0.7), center_px.y + (int)(label_offset * 0.7) };
-             alignments[5] = TextInBoxMode::Alignment::RIGHT;
-             vert_positions[5] = TextInBoxMode::VerticalPosition::BELOW;
-             
-             // West (left)
-             positions[6] = { center_px.x - label_offset, center_px.y };
-             alignments[6] = TextInBoxMode::Alignment::RIGHT;
-             vert_positions[6] = TextInBoxMode::VerticalPosition::CENTERED;
-             
-             // Northwest
-             positions[7] = { center_px.x - (int)(label_offset * 0.7), center_px.y - (int)(label_offset * 0.7) };
-             alignments[7] = TextInBoxMode::Alignment::RIGHT;
-             vert_positions[7] = TextInBoxMode::VerticalPosition::ABOVE;
-             
-             // Find the position closest to the aircraft
-             int closest_idx = 0;
-             int min_distance_squared = INT_MAX;
-             
-             for (int i = 0; i < 8; i++) {
-                 int dx = positions[i].x - aircraft_pos.x;
-                 int dy = positions[i].y - aircraft_pos.y;
-                 int distance_squared = dx * dx + dy * dy;
-                 
-                 if (distance_squared < min_distance_squared) {
-                     min_distance_squared = distance_squared;
-                     closest_idx = i;
-                 }
-             }
-             
-             // Set the alignment and vertical position for the closest position
-             text_mode.align = alignments[closest_idx];
-             text_mode.vertical_position = vert_positions[closest_idx];
-             
-             // Draw the label at the closest position
-             TextInBox(canvas, time_text, positions[closest_idx], text_mode, projection.GetScreenSize());
-          }
+    // Always convert center to screen coordinates regardless of visibility
+    auto center_px = projection.GeoToScreen(ring_center);
+    // Get aircraft position for label placement optimization
+    PixelPoint aircraft_pos = projection.GeoToScreen(basic.location);
+
+    // Get the common speed from the FIN ETE calculation
+    const TaskStats &task_stats = calculated.task_stats;
+    double fin_ete_speed = 0;
+    if (task_stats.task_valid && task_stats.total.remaining_effective.IsDefined()) {
+      fin_ete_speed = task_stats.total.remaining_effective.GetSpeed() * 3.6; // m/s to km/h
+    }
+    // If speed is not available or zero, use a default value
+    if (fin_ete_speed <= 0) {
+      fin_ete_speed = 100; // Default 100 km/h
+    }
+
+    // --- Draw Original ArrivalTimeRing (User-defined time) ---
+    {
+      double radius_meters_arrival = 0;
+      unsigned minutes_of_day = 17 * 60 + 0; // Default to 5:00 PM (1700)
+      Profile::Get(ProfileKeys::ArrivalTimeRingTime, minutes_of_day);
+
+      bool draw_original_ring = false; // Flag to control drawing
+
+      if (basic.time_available) {
+        RoughTimeDelta utc_offset = computer_settings.utc_offset;
+        TimeStamp local_time = TimeLocal(basic.time, utc_offset);
+        BrokenTime target_time(minutes_of_day / 60, minutes_of_day % 60, 0);
+        BrokenTime current_broken_time = BrokenTime::FromSecondOfDayChecked(
+            (unsigned)local_time.ToDuration().count());
+
+        int current_seconds = current_broken_time.GetSecondOfDay();
+        int target_seconds = target_time.GetSecondOfDay();
+        int seconds_diff = target_seconds - current_seconds;
+        if (seconds_diff < 0) {
+          seconds_diff += 24 * 3600; // Add 24 hours if target is next day
+        }
+        double hours_to_target = seconds_diff / 3600.0;
+
+        // *** Only calculate radius and set flag if time delta is <= 6 hours ***
+        if (hours_to_target <= 6.0) {
+            radius_meters_arrival = fin_ete_speed * hours_to_target * 1000; // km/h * h * 1000 = m
+            draw_original_ring = true;
+        }
+      } else {
+        // Fallback: Draw if time is not available (using default radius)
+        constexpr double radius_miles = 10.0;
+        constexpr double meters_per_mile = 1609.34;
+        radius_meters_arrival = radius_miles * meters_per_mile;
+        draw_original_ring = true;
       }
+
+      // Only draw the original ring if the flag is set
+      if (draw_original_ring) {
+          // Format the label
+          TCHAR arrival_label[32];
+      _stprintf(arrival_label, _T("Arrival %02u:%02u"),
+                minutes_of_day / 60, minutes_of_day % 60);
+
+      // Define color
+      constexpr Color arrival_ring_color = Color(255, 0, 255); // Magenta
+
+          // Draw the ring using the helper function
+          DrawMapRing(canvas, projection, center_px, radius_meters_arrival,
+                      arrival_ring_color, arrival_label, aircraft_pos);
+      }
+    }
+
+    // --- Draw New "Arrival Ring AAT" (AAT time remaining, if enabled) ---
+    if (task_behaviour.arrival_ring_aat_enabled) { // Check if the setting is enabled
+      const CommonStats &common_stats = calculated.common_stats;
+      // Check if AAT time remaining is valid and we have an ordered task
+      // (AAT time only makes sense for ordered tasks like AAT)
+      if (task_stats.task_valid && task_stats.has_targets &&
+          std::isfinite(common_stats.aat_time_remaining.count())) {
+        // Convert AAT time remaining (seconds) to hours
+        double hours_aat = common_stats.aat_time_remaining.count() / 3600.0;
+
+        // Calculate radius based on AAT time remaining
+        // Only draw if time remaining is positive
+        if (hours_aat > 0) {
+            double radius_meters_aat = fin_ete_speed * hours_aat * 1000; // km/h * h * 1000 = m
+
+            // Format the AAT minimum time label
+            TCHAR aat_label[32];
+            const auto min_time_duration = task_behaviour.ordered_defaults.aat_min_time;
+            const unsigned total_minutes = static_cast<unsigned>(min_time_duration.count() / 60.0); // Assuming duration is in seconds
+            const unsigned aat_hours = total_minutes / 60;
+            const unsigned aat_minutes = total_minutes % 60;
+            _stprintf(aat_label, _T("AAT %u:%02u"), aat_hours, aat_minutes);
+
+            // Define color
+            constexpr Color aat_ring_color = Color(0, 255, 255); // Cyan
+
+            // Draw the ring using the helper function
+            DrawMapRing(canvas, projection, center_px, radius_meters_aat,
+                        aat_ring_color, aat_label, aircraft_pos);
+        }
+      }
+    }
   }
 
-  // Draw waypoint labels
+  // Draw waypoint labels 
   MapWaypointLabelRender(canvas, projection.GetScreenSize(),
                          label_block, v.labels, look);
 }
