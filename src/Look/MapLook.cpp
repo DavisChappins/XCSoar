@@ -53,7 +53,7 @@ MapLook::Initialise(const MapSettings &settings,
   reach_working_pen.Create(Pen::DASH1, Layout::ScalePenWidth(1), clrBlupia);
   reach_working_pen_thick.Create(Pen::DASH1, Layout::ScalePenWidth(2), clrBlupia);
 
-  track_line_pen.Create(3, COLOR_GRAY);
+  track_line_pen.Create(Layout::ScalePenWidth(3), COLOR_GRAY);
   
   // Create green pen and brush for the Turn Back Point (TBP)
   tbp_pen.Create(Layout::ScalePenWidth(2), COLOR_GREEN);
