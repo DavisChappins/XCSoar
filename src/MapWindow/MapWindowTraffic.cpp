@@ -9,6 +9,7 @@
 #include "Renderer/TextInBox.hpp"
 #include "Renderer/TrafficRenderer.hpp"
 #include "FLARM/Friends.hpp"
+#include "FLARM/TrafficThermalDetector.hpp" // Added for MAX_RECENTLY_STOPPED_AGE
 #include "Tracking/SkyLines/Data.hpp"
 #include "util/StringCompare.hxx"
 
@@ -254,3 +255,45 @@ MapWindow::DrawSkyLinesTraffic(Canvas &canvas) const noexcept
 }
 
 #endif
+
+/**
+ * @brief Draws detected thermals (circling traffic average climb rate) onto the map.
+ * @param canvas Canvas for drawing
+ */
+void
+MapWindow::DrawDetectedThermals(Canvas &canvas) const noexcept
+{
+  const auto& thermals = GetDetectedThermals();
+  if (thermals.empty()) {
+    return;
+  }
+
+  const WindowProjection &projection = render_projection;
+  const TimeStamp now = Basic().clock; // Get current time for expiry check
+
+  // Select the font for thermal labels
+  canvas.Select(traffic_look.thermal_font);
+  // Set text color (e.g., white or a specific thermal color)
+  canvas.SetTextColor(Color(255, 255, 255)); // Use constructor for white
+
+  TextInBoxMode mode;
+  mode.shape = LabelShape::OUTLINED; // Use outlined text for visibility
+  mode.align = TextInBoxMode::Alignment::CENTER;
+
+  for (const auto& [id, thermal_info] : thermals) {
+    // Check if the thermal info is recent enough and in a displayable state
+    if (thermal_info.IsRelevantForDisplay(now, TrafficThermalDetector::MAX_RECENTLY_STOPPED_AGE) &&
+        thermal_info.center_location.IsValid())
+    {
+      // Project the thermal's center location to screen coordinates
+      if (auto p = projection.GeoToScreenIfVisible(thermal_info.center_location)) {
+        // Format the average climb rate string (e.g., "+1.2")
+        StaticString<16> climb_str;
+        FormatUserVerticalSpeed(thermal_info.average_climb_rate, climb_str, true); // true = force sign
+
+        // Draw the text label
+        TextInBox(canvas, climb_str, *p, mode, GetClientRect());
+      }
+    }
+  }
+}

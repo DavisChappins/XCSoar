@@ -67,7 +67,17 @@ MapWindowBlackboard::ReadBlackboard(const MoreData &nmea_info,
                       nmea_info.flarm.traffic,
                       nmea_info.clock);
 
-  gps_info = nmea_info;
+  gps_info = nmea_info; // This copies the FlarmData including detected_thermals
   calculated_info = derived_info;
+
+  // Explicitly copy the detected thermals map for clarity and potential future filtering
+  detected_thermals = nmea_info.flarm.detected_thermals;
+}
+
+void
+MapWindowBlackboard::ReadDetectedThermals(const std::map<FlarmId, TrafficThermalInfo>& new_thermals) noexcept
+{
+  // Simple copy for now. Could implement more complex merging/filtering if needed.
+  detected_thermals = new_thermals;
 }
 

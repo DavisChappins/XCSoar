@@ -7,8 +7,7 @@
 #include "ui/canvas/Pen.hpp"
 #include "ui/canvas/Brush.hpp"
 #include "ui/canvas/Icon.hpp"
-
-class Font;
+#include "ui/canvas/Font.hpp" // Added full definition for Font class
 
 struct TrafficLook {
   static constexpr Color safe_above_color{0x1d,0x9b,0xc5};
@@ -43,7 +42,8 @@ struct TrafficLook {
 
   MaskedIcon teammate_icon;
 
-  const Font *font;
+  const Font *font; // Font for regular traffic labels
+  Font thermal_font; // Font for detected thermal climb rate
 
   void Initialise(const Font &font);
 };

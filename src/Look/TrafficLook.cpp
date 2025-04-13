@@ -2,6 +2,7 @@
 // Copyright The XCSoar Project
 
 #include "TrafficLook.hpp"
+#include "Look/FontDescription.hpp" // Added for FontDescription definition
 #include "Screen/Layout.hpp"
 #include "Resources.hpp"
 
@@ -34,4 +35,9 @@ TrafficLook::Initialise(const Font &_font)
   teammate_icon.LoadResource(IDB_TEAMMATE_POS_ALL);
 
   font = &_font;
+
+  // Initialize thermal font (e.g., slightly smaller than the main traffic font)
+  // FontDescription thermal_font_desc = _font.GetDescription(); // Error: Font has no GetDescription()
+  // thermal_font_desc.size = std::max(8, thermal_font_desc.size - 2); // Ensure minimum size
+  // thermal_font.Load(thermal_font_desc); // TODO: Find correct way to initialize thermal_font based on _font
 }

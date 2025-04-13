@@ -279,6 +279,9 @@ MapWindow::Render(Canvas &canvas, const PixelRect &rc) noexcept
 
   DrawFLARMTraffic(canvas, aircraft_pos);
 
+  // Draw detected thermals (circling traffic climb rate)
+  DrawDetectedThermals(canvas);
+
   //////////////////////////////////////////////// own aircraft
   // Finally, draw you!
   if (basic.location_available)

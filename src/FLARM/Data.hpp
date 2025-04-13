@@ -8,7 +8,9 @@
 #include "FLARM/Hardware.hpp"
 #include "FLARM/Status.hpp"
 #include "FLARM/List.hpp"
+#include "FLARM/TrafficThermal.hpp" // Added for detected thermals
 
+#include <map> // Added for std::map
 #include <type_traits>
 
 /**
@@ -25,16 +27,22 @@ struct FlarmData {
 
   TrafficList traffic;
 
+  /**
+   * @brief Thermals detected based on traffic behavior.
+   */
+  std::map<FlarmId, TrafficThermalInfo> detected_thermals;
+
   constexpr bool IsDetected() const noexcept {
     return status.available || !traffic.IsEmpty();
   }
 
-  constexpr void Clear() noexcept {
+  void Clear() noexcept { // Removed constexpr
     error.Clear();
     version.Clear();
     hardware.Clear();
     status.Clear();
     traffic.Clear();
+    detected_thermals.clear(); // Added clear for thermals map
   }
 
   constexpr void Complement(const FlarmData &add) noexcept {
@@ -53,5 +61,6 @@ struct FlarmData {
     traffic.Expire(clock);
   }
 };
-
-static_assert(std::is_trivial<FlarmData>::value, "type is not trivial");
+// std::map makes this non-trivial
+// static_assert(std::is_trivial<FlarmData>::value, "type is not trivial");
+// Removed duplicate static_assert

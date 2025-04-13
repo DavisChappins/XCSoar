@@ -12,8 +12,10 @@ FlarmComputer::Process(FlarmData &flarm, const FlarmData &last_flarm,
                        const NMEAInfo &basic) noexcept
 {
   // Cleanup old calculation instances
-  if (basic.time_available)
+  if (basic.time_available) {
     flarm_calculations.CleanUp(basic.time);
+    thermal_detector.Cleanup(basic.time); // Added thermal detector cleanup
+  }
 
   // if (FLARM data is available)
   if (!flarm.IsDetected())
@@ -44,6 +46,9 @@ FlarmComputer::Process(FlarmData &flarm, const FlarmData &last_flarm,
 
   // for each item in traffic
   for (auto &traffic : flarm.traffic.list) {
+    // Get previous traffic state *before* calculations modify the current 'traffic' object
+    const FlarmTraffic *last_traffic = last_flarm.traffic.FindTraffic(traffic.id);
+
     // if we don't know the target's name yet
     if (!traffic.HasName()) {
       // lookup the name of this target's id
@@ -78,15 +83,18 @@ FlarmComputer::Process(FlarmData &flarm, const FlarmData &last_flarm,
       traffic.climb_rate_avg30s =
         flarm_calculations.Average30s(traffic.id, basic.time, traffic.altitude);
 
+    // Update thermal detection state
+    if (basic.time_available) {
+        thermal_detector.Update(traffic, last_traffic, basic.time);
+    }
+
     // The following calculations are only relevant for targets
     // where information is missing
     if (traffic.track_received && traffic.turn_rate_received &&
         traffic.speed_received && traffic.climb_rate_received)
       continue;
 
-    // Check if the target has been seen before in the last seconds
-    const FlarmTraffic *last_traffic =
-      last_flarm.traffic.FindTraffic(traffic.id);
+    // Check if the target has been seen before in the last seconds (lookup moved earlier)
     if (last_traffic == NULL || !last_traffic->valid)
       continue;
 
@@ -136,4 +144,7 @@ FlarmComputer::Process(FlarmData &flarm, const FlarmData &last_flarm,
         traffic.speed = last_traffic->speed;
     }
   }
+
+  // After processing all traffic, copy the detected thermals into the output FlarmData
+  flarm.detected_thermals = thermal_detector.GetDisplayableThermals();
 }

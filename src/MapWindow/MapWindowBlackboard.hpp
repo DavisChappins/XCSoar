@@ -8,6 +8,7 @@
 #include "Blackboard/MapSettingsBlackboard.hpp"
 #include "thread/Debug.hpp"
 #include "UIState.hpp"
+#include "FLARM/TrafficThermal.hpp" // Added for detected thermals
 
 #include <map>
 
@@ -28,6 +29,11 @@ class MapWindowBlackboard:
    * (greyed out) for some time.
    */
   std::map<FlarmId, FlarmTraffic> fading_flarm_traffic;
+
+  /**
+   * @brief Detected thermals (circling traffic) relevant for display.
+   */
+  std::map<FlarmId, TrafficThermalInfo> detected_thermals;
 
 protected:
   MapWindowBlackboard() noexcept {
@@ -56,6 +62,12 @@ protected:
   }
 
   [[gnu::const]]
+  const auto &GetDetectedThermals() const noexcept {
+    assert(InDrawThread());
+    return detected_thermals;
+  }
+
+  [[gnu::const]]
   const ComputerSettings &GetComputerSettings() const noexcept {
     assert(InDrawThread());
 
@@ -80,6 +92,7 @@ protected:
                       const DerivedInfo &derived_info) noexcept;
   void ReadComputerSettings(const ComputerSettings &settings) noexcept;
   void ReadMapSettings(const MapSettings &settings) noexcept;
+  void ReadDetectedThermals(const std::map<FlarmId, TrafficThermalInfo>& new_thermals) noexcept;
 
   void ReadUIState(const UIState &new_value) noexcept {
     ui_state = new_value;

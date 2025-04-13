@@ -297,6 +297,7 @@ protected:
   void DrawTerrainAbove(Canvas &canvas) noexcept;
   void DrawFLARMTraffic(Canvas &canvas, PixelPoint aircraft_pos) const noexcept;
   void DrawGLinkTraffic(Canvas &canvas) const noexcept;
+  void DrawDetectedThermals(Canvas &canvas) const noexcept;
 
   // thread, main functions
   /**
